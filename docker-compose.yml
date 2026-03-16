@@ -1,0 +1,166 @@
+services:
+  postgres-auth:
+    image: postgres:16
+    container_name: postgres-auth
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+
+  postgres-trading:
+    image: postgres:16
+    container_name: postgres-trading
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tradingdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_trading_data:/var/lib/postgresql/data
+
+  postgres-marketdata:
+    image: postgres:16
+    container_name: postgres-marketdata
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: marketdatadb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5438:5432"
+    volumes:
+      - postgres_marketdata_data:/var/lib/postgresql/data
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    ports:
+      - "8088:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  discovery-service:
+    build:
+      context: .
+      dockerfile: services/discovery-service/Dockerfile
+    container_name: discovery-service
+    restart: unless-stopped
+    ports:
+      - "8761:8761"
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: auth-service
+    restart: unless-stopped
+    depends_on:
+      - postgres-auth
+      - discovery-service
+    environment:
+      DB_URL: jdbc:postgresql://postgres-auth:5432/authdb
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      EUREKA_URL: http://discovery-service:8761/eureka/
+      JWT_SECRET: CHANGE_THIS_TO_A_LONG_SECURE_SECRET_12345678901234567890
+    ports:
+      - "8081:8081"
+
+  trading-service:
+    build:
+      context: .
+      dockerfile: services/trading-service/Dockerfile
+    container_name: trading-service
+    restart: unless-stopped
+    depends_on:
+      - postgres-trading
+      - kafka
+      - discovery-service
+    environment:
+      DB_URL: jdbc:postgresql://postgres-trading:5432/tradingdb
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_URL: http://discovery-service:8761/eureka/
+      JWT_SECRET: CHANGE_THIS_TO_A_LONG_SECURE_SECRET_12345678901234567890
+      APP_KAFKA_ENABLED: "true"
+    ports:
+      - "8082:8082"
+
+  market-data-service:
+    build:
+      context: .
+      dockerfile: services/market-data-service/Dockerfile
+    container_name: market-data-service
+    restart: unless-stopped
+    depends_on:
+      - postgres-marketdata
+      - kafka
+      - discovery-service
+    environment:
+      DB_URL: jdbc:postgresql://postgres-marketdata:5432/marketdatadb
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_URL: http://discovery-service:8761/eureka/
+      APP_KAFKA_ENABLED: "true"
+    ports:
+      - "8083:8083"
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    depends_on:
+      - auth-service
+      - trading-service
+      - market-data-service
+      - discovery-service
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_auth_data:
+  postgres_trading_data:
+  postgres_marketdata_data:

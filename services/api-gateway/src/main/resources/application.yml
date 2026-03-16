@@ -1,0 +1,55 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: auth
+              uri: http://auth-service:8081
+              predicates:
+                - Path=/api/auth/**
+
+            - id: trading-orders
+              uri: http://trading-service:8082
+              predicates:
+                - Path=/api/orders/**
+
+            - id: trading-admin
+              uri: http://trading-service:8082
+              predicates:
+                - Path=/api/admin/**
+
+            - id: trading-system
+              uri: http://trading-service:8082
+              predicates:
+                - Path=/api/system/**
+
+            - id: trading-my-trades
+              uri: http://trading-service:8082
+              predicates:
+                - Path=/api/trades/mine
+
+            - id: market-orderbook
+              uri: http://market-data-service:8083
+              predicates:
+                - Path=/api/orderbook/**
+
+            - id: market-trades
+              uri: http://market-data-service:8083
+              predicates:
+                - Path=/api/trades/**
+
+eureka:
+  client:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
